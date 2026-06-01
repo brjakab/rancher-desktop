@@ -61,9 +61,9 @@ enum SyncStateKey {
 type SyncState =
   { state: SyncStateKey.IDLE } |
   /** The `active` promise will be resolved once the current sync is complete. */
-  { state: SyncStateKey.ACTIVE, active: ReturnType<typeof Latch> } |
+  { state: SyncStateKey.ACTIVE, active: ReturnType<typeof Latch<void>> } |
   /** The `queued` promise will be resolved after the current sync +1 is complete. */
-  { state: SyncStateKey.QUEUED, active: ReturnType<typeof Latch>, queued: ReturnType<typeof Latch> };
+  { state: SyncStateKey.QUEUED, active: ReturnType<typeof Latch<void>>, queued: ReturnType<typeof Latch<void>> };
 
 /**
  * DiagnosticKey limits the `key` argument of the diagnostic events.
@@ -199,10 +199,20 @@ export default class WindowsIntegrationManager implements IntegrationManager {
         kubeconfigPath = undefined;
       }
 
+      const runningDistros = await this.runningDistros;
+      const enabledDistros = new Set(
+        Object.entries(this.settings.WSL?.integrations ?? {})
+          .filter(([_, enabled]) => enabled === true)
+          .map(([name]) => name),
+      );
+      const canKeepStoppedDistroAlive = !this.dockerSocketProxyReason;
       await Promise.all([
         this.syncHostSocketProxy(),
         this.syncHostDockerPluginConfig(),
-        ...(await this.supportedDistros).map(distro => this.syncDistro(distro.name, kubeconfigPath)),
+        ...(await this.supportedDistros)
+          .filter(distro => runningDistros.has(distro.name) ||
+            (canKeepStoppedDistroAlive && enabledDistros.has(distro.name)))
+          .map(distro => this.syncDistro(distro.name, kubeconfigPath)),
       ]);
     } catch (ex) {
       console.error(`Integration sync: Error: ${ ex }`);
@@ -515,10 +525,11 @@ export default class WindowsIntegrationManager implements IntegrationManager {
    */
   async verifyAllDistrosKubeConfig() {
     const distros = await this.supportedDistros;
+    const running = await this.runningDistros;
 
-    await Promise.all(distros.map(async(distro) => {
-      await this.verifyDistroKubeConfig(distro.name);
-    }));
+    await Promise.all(distros
+      .filter(distro => running.has(distro.name))
+      .map(distro => this.verifyDistroKubeConfig(distro.name)));
   }
 
   /**
@@ -530,15 +541,15 @@ export default class WindowsIntegrationManager implements IntegrationManager {
       const wslHelper = await this.getLinuxToolPath(distro, executable('wsl-helper-linux'));
 
       await this.execCommand({ distro }, wslHelper, 'kubeconfig', '--verify');
-    } catch (err: any) {
+    } catch (cause: any) {
       // Only throw for a specific error code 1, since we control that from the
       // kubeconfig --verify command. The logic here is to bubble up this error
       // so that the diagnostic is very specific to this issue. Any other errors
       // are captured as log messages.
-      if (err && 'code' in err && err.code === 1) {
-        throw new Error(`The kubeConfig contains non-Rancher Desktop configuration in distro ${ distro }`);
+      if (cause && 'code' in cause && cause.code === 1) {
+        throw new Error(`The kubeConfig contains non-Rancher Desktop configuration in distro ${ distro }`, { cause });
       } else {
-        console.error(`Verifying kubeconfig in distro ${ distro } failed: ${ err }`);
+        console.error(`Verifying kubeconfig in distro ${ distro } failed: ${ cause }`);
       }
     }
     console.debug(`Verified kubeconfig in the following distro: ${ distro }`);
@@ -587,9 +598,9 @@ export default class WindowsIntegrationManager implements IntegrationManager {
   protected async syncDistroSpinCLI(distro: string, state: boolean) {
     try {
       if (state && this.settings.experimental?.containerEngine?.webAssembly) {
-        const version = semver.parse(DEPENDENCY_VERSIONS.spinCLI);
+        const version = semver.parse(DEPENDENCY_VERSIONS.spinCLI.version);
         const env = {
-          KUBE_PLUGIN_VERSION: DEPENDENCY_VERSIONS.spinKubePlugin,
+          KUBE_PLUGIN_VERSION: DEPENDENCY_VERSIONS.spinKubePlugin.version,
           SPIN_TEMPLATES_TAG:  (version ? `spin/templates/v${ version.major }.${ version.minor }` : 'unknown'),
         };
         const wslenv = Object.keys(env).join(':');
@@ -615,7 +626,7 @@ export default class WindowsIntegrationManager implements IntegrationManager {
       let wslOutput: string;
 
       try {
-        wslOutput = await this.captureCommand({ encoding: 'utf16le' }, '--list', '--verbose');
+        wslOutput = await this.captureCommand({ env: { WSL_UTF8: '1' } }, '--list', '--verbose');
       } catch (error: any) {
         console.error(`Error listing distros: ${ error }`);
 
@@ -643,6 +654,29 @@ export default class WindowsIntegrationManager implements IntegrationManager {
     })();
   }
 
+  /**
+   * Returns a set of WSL distro names that are currently in Running state.
+   * Used to avoid starting stopped distros just to query or sync them,
+   * which would trigger WSL's idle-termination and clear binfmt_misc entries.
+   */
+  protected get runningDistros(): Promise<Set<string>> {
+    return (async() => {
+      try {
+        const output = await this.captureCommand({ env: { WSL_UTF8: '1' } }, '--list', '--running', '--quiet');
+        const names = output
+          .split(/\r?\n/g)
+          .map(x => x.trim())
+          .filter(x => x);
+
+        return new Set(names);
+      } catch (error) {
+        console.error(`Error listing running distros: ${ error }`);
+
+        return new Set<string>();
+      }
+    })();
+  }
+
   protected async markIntegration(distro: string, state: boolean): Promise<void> {
     try {
       const exe = await this.getLinuxToolPath(distro, executable('wsl-helper-linux'));
@@ -657,7 +691,9 @@ export default class WindowsIntegrationManager implements IntegrationManager {
   async listIntegrations(): Promise<Record<string, boolean | string>> {
     // Get the results in parallel
     const distros = await this.nonBlacklistedDistros;
-    const states = distros.map(d => (async() => [d.name, await this.getStateForIntegration(d)] as const)());
+    const running = await this.runningDistros;
+    const states = distros.map(async(d) =>
+      [d.name, await this.getStateForIntegration(d, running)] as const);
 
     return Object.fromEntries(await Promise.all(states));
   }
@@ -666,11 +702,18 @@ export default class WindowsIntegrationManager implements IntegrationManager {
    * Tells the caller what the state of a distro is. For more information see
    * the comment on `IntegrationManager.listIntegrations`.
    */
-  protected async getStateForIntegration(distro: WSLDistro): Promise<boolean | string> {
+  protected async getStateForIntegration(distro: WSLDistro, runningDistros?: Set<string>): Promise<boolean | string> {
     if (distro.version !== 2) {
       console.log(`WSL distro "${ distro.name }": is version ${ distro.version }`);
 
       return `Rancher Desktop can only integrate with v2 WSL distributions (this is v${ distro.version }).`;
+    }
+    // Skip starting stopped distros just to read their state; return the
+    // settings value directly instead (the UI will reflect it correctly).
+    const running = runningDistros ?? await this.runningDistros;
+
+    if (!running.has(distro.name)) {
+      return this.settings.WSL?.integrations?.[distro.name] ?? false;
     }
     try {
       const exe = await this.getLinuxToolPath(distro.name, executable('wsl-helper-linux'));

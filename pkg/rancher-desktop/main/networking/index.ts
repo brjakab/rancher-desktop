@@ -42,14 +42,6 @@ export default async function setupNetworking() {
 
   // Set up certificate handling for system certificates on Windows and macOS
   Electron.app.on('certificate-error', async(event, webContents, url, error, certificate, callback) => {
-    const tlsPort = 9443;
-    const dashboardUrls = [
-      `https://127.0.0.1:${ tlsPort }`,
-      `wss://127.0.0.1:${ tlsPort }`,
-      'http://127.0.0.1:6120',
-      'ws://127.0.0.1:6120',
-    ];
-
     const pluginDevUrls = [
       `https://localhost:8888`,
       `wss://localhost:8888`,
@@ -60,14 +52,6 @@ export default async function setupNetworking() {
       process.env.RD_ENV_PLUGINS_DEV &&
       pluginDevUrls.some(x => url.startsWith(x))
     ) {
-      event.preventDefault();
-
-      callback(true);
-
-      return;
-    }
-
-    if (dashboardUrls.some(x => url.startsWith(x)) && 'dashboard' in windowMapping) {
       event.preventDefault();
 
       callback(true);

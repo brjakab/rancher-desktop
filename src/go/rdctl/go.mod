@@ -1,20 +1,18 @@
 module github.com/rancher-sandbox/rancher-desktop/src/go/rdctl
 
-go 1.24.0
-
-toolchain go1.24.2
+go 1.25.0
 
 require (
 	github.com/adrg/xdg v0.5.3
-	github.com/docker/cli v29.2.1+incompatible
+	github.com/docker/cli v29.5.2+incompatible
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/sirupsen/logrus v1.9.4
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/sys v0.41.0
-	golang.org/x/text v0.34.0
+	golang.org/x/sys v0.45.0
+	golang.org/x/text v0.37.0
 )
 
 require (

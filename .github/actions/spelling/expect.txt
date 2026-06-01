@@ -12,13 +12,14 @@ adrg
 airgap
 aks
 alertmanager
+algif
 alibaba
 aliyun
 aliyunecs
 aliyunkubernetescontainerservice
 allcols
-allusers
 ALLPLATFORMS
+allusers
 altgraph
 andsection
 apierrors
@@ -43,8 +44,10 @@ assumeyes
 atk
 authconfig
 authdata
+authencesn
 Authenticode
 authprovider
+AUTHSIZE
 auxww
 Awop
 backgrounding
@@ -55,7 +58,6 @@ banzaicloud
 basedisk
 bassano
 batslib
-bci
 bellingham
 binfmt
 blahblah
@@ -76,6 +78,7 @@ buildroot
 bulbasaur
 bulkable
 bulkaction
+Bxxxxxxx
 cacerts
 camelpunch
 CAPI
@@ -125,6 +128,8 @@ crond
 cshrc
 ctrctl
 ctxs
+curlft
+daddr
 daemonset
 dapp
 datadog
@@ -138,6 +143,7 @@ dedot
 deepmap
 defattr
 deislabs
+DEPMAN
 destinationrule
 DETECTEXCEPTIONS
 developercertificate
@@ -147,6 +153,7 @@ didinit
 diffdisk
 digitalocean
 dirents
+dirtyfrag
 distatus
 distros
 Dlg
@@ -169,6 +176,7 @@ eastus
 ebegin
 ecm
 edmonton
+eend
 einfo
 electronjs
 elko
@@ -201,6 +209,7 @@ factoryreset
 fakercfile
 fanotify
 fav
+fcrypt
 fdx
 featurename
 FEEEFEEE
@@ -216,6 +225,7 @@ FOLDERID
 fontstack
 fqname
 freeipa
+fromhex
 frontends
 fscache
 gabcdef
@@ -238,6 +248,7 @@ googleoauth
 gopacket
 GOTOOLCHAIN
 govet
+GOWORK
 gpu
 gtk
 guestagent
@@ -276,7 +287,9 @@ ifaces
 ifname
 ifnotstart
 ifstarted
+IHHII
 iidfile
+IIHBB
 imageinfo
 IMAGENAME
 IMAGEPATH
@@ -324,6 +337,7 @@ Kubewarden
 kurrent
 kwctl
 ldconfig
+lft
 LGHT
 limactl
 limaiptables
@@ -336,7 +350,6 @@ linuxkit
 Linuxy
 loadbalancer
 loblaw
-localnet
 logdna
 loglines
 logz
@@ -351,6 +364,7 @@ mcapps
 mediaselect
 messageformat
 metainfo
+metavar
 metricsection
 mikey
 milli
@@ -387,12 +401,21 @@ networkpolicy
 neu
 newauth
 newfs
+NEWNET
 newpid
+NEWSA
+NEWUSER
 nginx
 ngx
 ninep
+nla
+nlattr
+nlhdr
+NLMSG
+nlmsghdr
 noarch
 nocopy
+noctx
 nologin
 nologo
 nomount
@@ -441,6 +464,7 @@ pageup
 parsesection
 pascalize
 pathspec
+pcbc
 pcs
 pdp
 persistentvolume
@@ -459,8 +483,8 @@ podmonitor
 podsecuritypolicytemplate
 POLLIN
 POptions
-portbinding
 portforward
+portfwd
 portmap
 portmapping
 portproxy
@@ -488,6 +512,7 @@ ptn
 publicdomain
 pushable
 pvc
+PWND
 PWSTR
 qcow
 rackspace
@@ -517,14 +542,17 @@ remotedns
 replicaset
 replicationcontroller
 repofile
+reqid
 requried
 resourcequota
 resourceset
 restclient
 restoretip
+reswan
 reusecab
 rioinfo
 rke
+rlen
 RLENGTH
 rmi
 rockylinux
@@ -544,6 +572,8 @@ runlevel
 runtimeclass
 runtimeclasses
 rvf
+rxrpc
+SAs
 scaleio
 scanbenchmark
 scanprofile
@@ -575,6 +605,7 @@ showduplicates
 showmuted
 shuf
 sigch
+signalutil
 signtool
 singleparsesection
 sio
@@ -636,9 +667,11 @@ TKE
 tmpconfig
 tmpfiles
 tmutil
+TOCTOU
 toggleable
 togglefullscreen
 tonistiigi
+toolsets
 topmenu
 TQF
 traefik
@@ -654,9 +687,11 @@ unexposing
 unparsable
 upcloud
 Upgradable
+upperdir
 useb
 userdb
 userpreference
+usersa
 UTCTIME
 vcenter
 vcpus
@@ -676,6 +711,8 @@ vishvananda
 VMGUID
 VMID
 vmnet
+vmsplice
+VMSWITCH
 vmwarevsphere
 vmx
 vnc
@@ -694,6 +731,7 @@ wixobj
 WIXUI
 wontfix
 wordpress
+writeback
 wslconfig
 wslenv
 WSLg
@@ -711,6 +749,8 @@ xauth
 XAUTHORITY
 xdev
 xec
+xfrm
+XFRMA
 xfs
 xmlout
 xorg

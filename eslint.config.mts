@@ -1,6 +1,6 @@
 import path from 'path';
 
-import { includeIgnoreFile } from '@eslint/compat';
+import { includeIgnoreFile } from '@eslint/config-helpers';
 import eslint from '@eslint/js';
 import { standardTypeChecked } from '@vue/eslint-config-standard-with-typescript';
 import { defineConfigWithVueTs, vueTsConfigs } from '@vue/eslint-config-typescript';
@@ -90,6 +90,12 @@ export default defineConfigWithVueTs(
     },
   },
   {
+    // The `no-useless-assignment` rule is catching `export const getters = ...` for some reason.
+    name:  'rancher-desktop-useless-assignment-in-store',
+    files: ['pkg/rancher-desktop/store/*.ts'],
+    rules: { 'no-useless-assignment': 'off' },
+  },
+  {
     // Disable TypeScript-specific rules in JavaScript files.
     name:  'rancher-desktop-js',
     files: ['**/*.js', '**/*.cjs'],
@@ -118,6 +124,18 @@ export default defineConfigWithVueTs(
     ],
     languageOptions: {
       globals: globals.browser,
+    },
+  },
+  {
+    // Files we imported from Rancher Dashboard.
+    name:  'rancher-dashboard-useless-assignments',
+    files: [
+      'pkg/rancher-desktop/components/SortableTable/*',
+      'pkg/rancher-desktop/store/*.js',
+      'pkg/rancher-desktop/utils/*.js',
+    ],
+    rules: {
+      'no-useless-assignment': 'off',
     },
   },
   {

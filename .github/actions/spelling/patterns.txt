@@ -197,6 +197,8 @@ Copyright (?:\([Cc]\)|)(?:[-\d, ]|and)+(?: [A-Z][a-z]+ [A-Z][a-z]+,?)+
 \s(\w+)\s+\g{-1}\s+\`(?:graphql|inject|json|yaml):
 # doxygen / javadoc / .net
 (?:[\\@](?:brief|defgroup|groupname|link|t?param|return|retval)|(?:public|private|\[Parameter(?:\(.+\)|)\])(?:\s+(?:static|override|readonly|required|virtual))*)(?:\s+\{\w+\}|)\s+(\w+)\s+\g{-1}\s
+# C# getter/setter
+\s(\w+)\s+\g{-1}\s*\{\s*[gs]et;
 
 # macOS file path
 (?:Contents\W+|(?!iOS)/)MacOS\b
@@ -249,3 +251,6 @@ DNAT\s+.*\s+anywhere anywhere
 
 # Image names
 \bghcr\.io/[A-Za-z0-9_/.-]+(?::[A-Za-z0-9_.-]+)?\b
+
+# Python string prefix / binary prefix
+(?<!['"])\b(?:B|BR|Br|F|FR|Fr|R|RB|RF|Rb|Rf|U|UR|Ur|b|bR|br|f|fR|fr|r|rB|rF|rb|rf|u|uR|ur)['"](?=[A-Z]{3,}|[A-Z][a-z]{2,}|[a-z]{3,})

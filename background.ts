@@ -25,8 +25,8 @@ import { PathManagementStrategy, PathManager } from '@pkg/integrations/pathManag
 import { getPathManagerFor } from '@pkg/integrations/pathManagerImpl';
 import { BackendState, CommandWorkerInterface, HttpCommandServer } from '@pkg/main/commandServer/httpCommandServer';
 import SettingsValidator from '@pkg/main/commandServer/settingsValidator';
+import { ContainerExecHandler } from '@pkg/main/containerExec';
 import { HttpCredentialHelperServer } from '@pkg/main/credentialServer/httpCredentialHelperServer';
-import { DashboardServer } from '@pkg/main/dashboardServer';
 import { DeploymentProfileError, readDeploymentProfiles } from '@pkg/main/deploymentProfiles';
 import { DiagnosticsManager, DiagnosticsResultCollection } from '@pkg/main/diagnostics/diagnostics';
 import { ExtensionErrorCode, isExtensionError } from '@pkg/main/extensions';
@@ -44,13 +44,13 @@ import getCommandLineArgs from '@pkg/utils/commandLine';
 import dockerDirManager from '@pkg/utils/dockerDirManager';
 import { isDevEnv } from '@pkg/utils/environment';
 import Logging, { clearLoggingDirectory, setLogLevel } from '@pkg/utils/logging';
+import { getAvailablePorts } from '@pkg/utils/networks';
 import { fetchMacOsVersion, getMacOsVersion } from '@pkg/utils/osVersion';
 import paths from '@pkg/utils/paths';
 import { protocolsRegistered, setupProtocolHandlers } from '@pkg/utils/protocols';
 import { executable } from '@pkg/utils/resources';
 import { jsonStringifyWithWhiteSpace } from '@pkg/utils/stringify';
 import { RecursivePartial, RecursiveReadonly } from '@pkg/utils/typeUtils';
-import { getVersion } from '@pkg/utils/version';
 import getWSLVersion from '@pkg/utils/wslVersion';
 import * as window from '@pkg/window';
 import { closeDashboard, openDashboard } from '@pkg/window/dashboard';
@@ -89,6 +89,7 @@ let cfg: settings.Settings;
 let firstRunDialogComplete = false;
 let gone = false; // when true indicates app is shutting down
 let imageEventHandler: ImageEventHandler | null = null;
+let containerExecHandler: ContainerExecHandler | null = null;
 let currentContainerEngine = settings.ContainerEngine.NONE;
 let currentImageProcessor: ImageProcessor | null = null;
 let enabledK8s: boolean;
@@ -224,8 +225,6 @@ Electron.app.whenReady().then(async() => {
     }
     // Check for required OS versions and features
     await checkPrerequisites();
-
-    DashboardServer.getInstance().init();
 
     await setupNetworking();
 
@@ -368,7 +367,7 @@ function updateBackendLockState(backendIsLocked: string, action?: string): void 
  * status.
  */
 async function doesBackendLockExist(): Promise<boolean> {
-  let backendIsLocked = '';
+  let backendIsLocked: string;
 
   const lockFileContents = await readBackendLockFile();
 
@@ -426,7 +425,7 @@ async function initUI() {
     // also needs to be updated in electron-builder.yml
     copyright:          'Copyright © 2021-2026 SUSE LLC',
     applicationName:    `${ Electron.app.name } by SUSE`,
-    applicationVersion: `Version ${ await getVersion() }`,
+    applicationVersion: `Version ${ process.env.RD_VERSION }`,
     iconPath:           path.join(paths.resources, 'icons', 'logo-square-512.png'),
   });
 
@@ -588,6 +587,12 @@ async function startK8sManager() {
 
   await initializeExtensionManager(k8smanager.containerEngineClient, cfg);
   window.send('extensions/changed');
+
+  if (!containerExecHandler) {
+    containerExecHandler = new ContainerExecHandler(k8smanager.containerEngineClient);
+  } else {
+    containerExecHandler.updateClient(k8smanager.containerEngineClient);
+  }
 }
 
 /**
@@ -959,10 +964,6 @@ ipcMainProxy.on('diagnostics/run', () => {
   diagnostics.runChecks();
 });
 
-ipcMainProxy.on('get-app-version', async(event) => {
-  event.reply('get-app-version', await getVersion());
-});
-
 ipcMainProxy.on('snapshot', (event, args) => {
   event.reply('snapshot', args);
 });
@@ -987,8 +988,8 @@ ipcMainProxy.handle('host/isArm', () => {
   return process.arch === 'arm64';
 });
 
-ipcMainProxy.on('help/preferences/open-url', async() => {
-  Help.preferences.openUrl(await getVersion());
+ipcMainProxy.on('help/preferences/open-url', () => {
+  Help.preferences.openUrl();
 });
 
 ipcMainProxy.handle('show-message-box', (_event, options: Electron.MessageBoxOptions): Promise<Electron.MessageBoxReturnValue> => {
@@ -1260,8 +1261,6 @@ function newK8sManager() {
 
   mgr.on('state-changed', async(state: K8s.State) => {
     try {
-      mainEvents.emit('k8s-check-state', mgr);
-
       if ([K8s.State.STARTED, K8s.State.DISABLED].includes(state)) {
         if (!cfg.kubernetes.version) {
           writeSettings({ kubernetes: { version: mgr.kubeBackend.version } });
@@ -1269,12 +1268,17 @@ function newK8sManager() {
         currentImageProcessor?.relayNamespaces();
 
         if (enabledK8s) {
-          await Steve.getInstance().start();
+          try {
+            await Steve.getInstance().start();
+          } catch (ex) {
+            console.error('Failed to start Steve:', ex);
+          }
         }
       }
 
-      // Notify UI after Steve is ready, so the dashboard button is only enabled
-      // when Steve can accept connections.
+      // Notify the tray and renderer after Steve is ready, so the dashboard
+      // button is only enabled when Steve can accept connections.
+      mainEvents.emit('k8s-check-state', mgr);
       window.send('k8s-check-state', state);
 
       if (state === K8s.State.STOPPING) {

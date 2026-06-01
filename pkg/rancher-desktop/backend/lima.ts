@@ -237,9 +237,9 @@ const console = Logging.lima;
 const DEFAULT_DOCKER_SOCK_LOCATION = '/var/run/docker.sock';
 
 export const MACHINE_NAME = '0';
-const IMAGE_VERSION = DEPENDENCY_VERSIONS.alpineLimaISO.isoVersion;
+const IMAGE_VERSION = DEPENDENCY_VERSIONS.alpineLimaISO.version.isoVersion;
 const ALPINE_EDITION = 'rd';
-const ALPINE_VERSION = DEPENDENCY_VERSIONS.alpineLimaISO.alpineVersion;
+const ALPINE_VERSION = DEPENDENCY_VERSIONS.alpineLimaISO.version.alpineVersion;
 
 const ETC_RANCHER_DESKTOP_DIR = '/etc/rancher/desktop';
 const CREDENTIAL_FORWARDER_SETTINGS_PATH = path.join(ETC_RANCHER_DESKTOP_DIR, 'credfwd');
@@ -655,6 +655,10 @@ export default class LimaBackend extends events.EventEmitter implements VMBacken
     // They must be removed because lima intends to switch to strict YAML parsing, so typos can be detected.
     delete (config as unknown as Record<string, unknown>).k3s;
     delete (config as unknown as Record<string, unknown>).paths;
+
+    // The top-level cpuType field is deprecated in favour of vmOpts.qemu.cpuType.
+    // Drop it so an upgraded VM's lima.yaml doesn't keep triggering lima's deprecation warning.
+    delete (config as unknown as Record<string, unknown>).cpuType;
 
     if (os.platform() === 'darwin') {
       if (allowRoot) {
@@ -1535,10 +1539,10 @@ export default class LimaBackend extends events.EventEmitter implements VMBacken
 
       promises.push(BackendHelper.configureContainerEngine(this, configureWASM, mobyStorageDriver));
       if (configureWASM) {
-        const version = semver.parse(DEPENDENCY_VERSIONS.spinCLI);
+        const version = semver.parse(DEPENDENCY_VERSIONS.spinCLI.version);
         const env = {
           ...process.env,
-          KUBE_PLUGIN_VERSION: DEPENDENCY_VERSIONS.spinKubePlugin,
+          KUBE_PLUGIN_VERSION: DEPENDENCY_VERSIONS.spinKubePlugin.version,
           SPIN_TEMPLATES_TAG:  (version ? `spin/templates/v${ version.major }.${ version.minor }` : 'unknown'),
         };
 
@@ -1835,7 +1839,21 @@ export default class LimaBackend extends events.EventEmitter implements VMBacken
           return;
         }
 
-        const vmStatus = await this.status;
+        let vmStatus = await this.status;
+
+        // Recover from an orphaned driver or host agent after an unclean
+        // shutdown; otherwise `limactl start` would fail.
+        // https://github.com/rancher-sandbox/rancher-desktop/issues/7760
+        if (vmStatus?.status === 'Broken') {
+          const orphanError = vmStatus.errors?.find(e => /(driver|host agent) is running but/.test(e));
+
+          if (orphanError) {
+            console.log(`Lima instance is broken (${ orphanError }); cleaning up before restart.`);
+            await this.progressTracker.action('Recovering broken virtual machine', 100,
+              this.lima('stop', '--force', MACHINE_NAME));
+            vmStatus = await this.status;
+          }
+        }
         let isVMAlreadyRunning = vmStatus?.status === 'Running';
 
         // Virtualization Framework only supports RAW disks

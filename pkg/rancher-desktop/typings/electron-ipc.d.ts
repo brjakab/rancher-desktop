@@ -25,8 +25,9 @@ export interface IpcMainEvents {
   'k8s-integrations':      () => void;
   'k8s-integration-set':   (name: string, newState: boolean) => void;
   'factory-reset':         (keepSystemImages: boolean) => void;
-  'get-app-version':       () => void;
   'update-network-status': (status: boolean) => void;
+  /** Trigger the corresponding IPC renderer event. */
+  'steve-port':            () => void;
 
   // #region main/update
   'update-state': () => void;
@@ -37,6 +38,13 @@ export interface IpcMainEvents {
   // #region main/containerEvents
   'do-containers-exec':        (command: string, containerId: string[]) => void;
   'containers-process-output': (data: string, isStdErr: boolean) => void;
+  // #endregion
+
+  // #region main/containerExec
+  'container-exec/start':  (containerId: string, namespace?: string) => void;
+  'container-exec/input':  (containerId: string, data: string) => void;
+  'container-exec/kill':   (containerId: string) => void;
+  'container-exec/detach': (containerId: string) => void;
   // #endregion
 
   // #region main/imageEvents
@@ -120,7 +128,6 @@ export interface IpcMainInvokeEvents {
   'transient-settings-update': (arg: RecursivePartial<import('@pkg/config/transientSettings').TransientSettings>) => void;
   'service-fetch':             (namespace?: string) => import('@pkg/backend/k8s').ServiceEntry[];
   'service-forward':           (service: ServiceEntry, state: boolean) => void;
-  'get-app-version':           () => string;
   'show-message-box':          (options: Electron.MessageBoxOptions) => Electron.MessageBoxReturnValue;
   'show-message-box-rd':       (options: Electron.MessageBoxOptions, modal?: boolean) => any;
   'api-get-credentials':       () => { user: string, password: string, port: number };
@@ -164,7 +171,6 @@ export interface IpcRendererEvents {
     settings: import('@pkg/config/settings').Settings
   ) => void;
   'settings-read':    (settings: import('@pkg/config/settings').Settings) => void;
-  'get-app-version':  (version: string) => void;
   'update-state':     (state: import('@pkg/main/update').UpdateState) => void;
   'always-debugging': (status: boolean) => void;
   'is-debugging':     (status: boolean) => void;
@@ -188,6 +194,7 @@ export interface IpcRendererEvents {
   'k8s-integrations':          (integrations: Record<string, boolean | string>) => void;
   'service-changed':           (services: ServiceEntry[]) => void;
   'service-error':             (service: ServiceEntry, errorMessage: string) => void;
+  'steve-port':                (port: number) => void;
   'kubernetes-errors-details': (
     titlePart: string,
     mainMessage: string,
@@ -207,6 +214,13 @@ export interface IpcRendererEvents {
   'images-check-state':       (state: boolean) => void;
   'images-namespaces':        (namespaces: string[]) => void;
   'container-process-output': (data: string, isStdErr: boolean) => void;
+  // #endregion
+
+  // #region main/containerExec
+  'container-exec/output':      (execId: string, data: string) => void;
+  'container-exec/exit':        (execId: string, code: number) => void;
+  'container-exec/ready':       (execId: string, history: string) => void;
+  'container-exec/unsupported': () => void;
   // #endregion
 
   // #region dialog
