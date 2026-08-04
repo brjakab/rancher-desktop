@@ -45,23 +45,23 @@ export default defineComponent({
         },
         {
           name:  'title',
-          label: 'Name',
+          label: this.t('marketplace.installed.table.header.name'),
           sort:  ['title', 'id'],
         },
         {
           name:  'vendor',
-          label: 'Vendor',
+          label: this.t('marketplace.installed.table.header.vendor'),
           sort:  ['vendor', 'title', 'id'],
           width: 160,
         },
         {
           name:  'description',
-          label: 'Description',
+          label: this.t('marketplace.installed.table.header.description'),
           sort:  ['description', 'title', 'id'],
         },
         {
           name:  'moreInfo',
-          label: 'More information',
+          label: this.t('marketplace.moreInfo'),
           width: 150,
         },
         {
@@ -71,6 +71,7 @@ export default defineComponent({
         },
       ],
       loading: true,
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- gives busy a string index signature for this.busy[id]
       busy:    {} as Record<string, boolean>,
     };
   },
@@ -82,7 +83,7 @@ export default defineComponent({
       return this.t('extensions.installed.emptyState.heading');
     },
     emptyStateBody(): string {
-      return this.t('extensions.installed.emptyState.body', { }, true);
+      return this.t('extensions.installed.emptyState.body');
     },
     installedExtensionRows(): InstalledExtensionRow[] {
       return this.installedExtensions.map(extension => ({
@@ -93,6 +94,7 @@ export default defineComponent({
         moreInfo:    this.extensionLink(extension),
       }));
     },
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- declares getter return types the build's checker infers as any
     ...mapGetters('extensions', ['installedExtensions']) as {
       installedExtensions: () => ExtensionState[],
     },

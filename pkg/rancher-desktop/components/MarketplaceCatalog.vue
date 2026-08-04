@@ -16,6 +16,7 @@ export default defineComponent({
   },
   computed: {
     ...mapGetters('preferences', ['getPreferences']),
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- declares getter return types the build's checker infers as any
     ...mapGetters('extensions', ['installedExtensions', 'marketData']) as {
       installedExtensions: () => ExtensionState[],
       marketData:          () => MarketplaceData[],
@@ -72,7 +73,7 @@ export default defineComponent({
     <input
       v-model="searchValue"
       type="text"
-      placeholder="Search"
+      :placeholder="t('generic.search')"
     >
     <div
       v-if="filteredExtensions.length === 0"

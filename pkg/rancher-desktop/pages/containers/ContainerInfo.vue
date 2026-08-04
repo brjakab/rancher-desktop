@@ -14,19 +14,26 @@
         pty process across tab switches).
       -->
       <tab
-        label="Info"
+        :label="t('containerInfo.info')"
         name="tab-info"
-        :weight="2"
+        :weight="3"
         @active="activeTab = 'tab-info'"
       />
+      <!-- TODO: hide this tab entirely when not on the Moby engine -->
       <tab
-        label="Logs"
+        :label="t('containerInfo.stats')"
+        name="tab-stats"
+        :weight="2"
+        @active="activeTab = 'tab-stats'"
+      />
+      <tab
+        :label="t('containerInfo.logs')"
         name="tab-logs"
         :weight="1"
         @active="activeTab = 'tab-logs'"
       />
       <tab
-        label="Shell"
+        :label="t('containerInfo.shell')"
         name="tab-shell"
         :weight="0"
         :disabled="!isRunning"
@@ -41,20 +48,20 @@
           <input
             ref="searchInput"
             v-model="searchTerm"
-            aria-label="Search in logs"
+            :aria-label="t('containerInfo.search.ariaLabel')"
             class="search-input"
             data-testid="search-input"
-            placeholder="Search logs..."
+            :placeholder="t('containerInfo.search.placeholder')"
             type="search"
             @input="onSearchInput"
             @keydown="handleSearchKeydown"
           >
           <button
             :disabled="!searchTerm"
-            aria-label="Previous match"
+            :aria-label="t('containerInfo.search.previousMatch')"
             class="search-btn btn role-tertiary"
             data-testid="search-prev-btn"
-            title="Previous match"
+            :title="t('containerInfo.search.previousMatch')"
             @click="searchPrevious"
           >
             <i
@@ -64,10 +71,10 @@
           </button>
           <button
             :disabled="!searchTerm"
-            aria-label="Next match"
+            :aria-label="t('containerInfo.search.nextMatch')"
             class="search-btn btn role-tertiary"
             data-testid="search-next-btn"
-            title="Next match"
+            :title="t('containerInfo.search.nextMatch')"
             @click="searchNext"
           >
             <i
@@ -77,10 +84,10 @@
           </button>
           <button
             :disabled="!searchTerm"
-            aria-label="Clear search"
+            :aria-label="t('containerInfo.search.clearSearch')"
             class="search-btn btn role-tertiary"
             data-testid="search-clear-btn"
-            title="Clear search"
+            :title="t('containerInfo.search.clearSearch')"
             @click="clearSearch"
           >
             <i
@@ -94,6 +101,12 @@
         <container-inspect
           v-if="containerId && activeTab === 'tab-info'"
           :container-id="containerId"
+          :namespace="namespace"
+        />
+        <container-stats
+          v-if="containerId && activeTab === 'tab-stats'"
+          :container-id="containerId"
+          :is-container-running="isRunning"
           :namespace="namespace"
         />
         <container-logs
@@ -124,6 +137,7 @@ import { useStore } from 'vuex';
 import ContainerInspect from '@pkg/components/ContainerInspect.vue';
 import ContainerLogs from '@pkg/components/ContainerLogs.vue';
 import ContainerShell from '@pkg/components/ContainerShell.vue';
+import ContainerStats from '@pkg/components/ContainerStats.vue';
 import RdTabbed from '@pkg/components/Tabbed/RdTabbed.vue';
 import Tab from '@pkg/components/Tabbed/Tab.vue';
 import type { Settings } from '@pkg/config/settings';
@@ -133,6 +147,7 @@ import { ipcRenderer } from '@pkg/utils/ipcRenderer';
 // Router and Store
 const route = useRoute();
 const store = useStore();
+const t = (key: string, args?: Record<string, unknown>) => store.getters['i18n/t'](key, args);
 
 // Template refs with proper typing
 const containerLogs = ref<InstanceType<typeof ContainerLogs> | null>(null);
@@ -143,7 +158,7 @@ const searchInput = ref<HTMLInputElement | null>(null);
 const settings = ref<Settings>();
 const subscribeTimer = ref<ReturnType<typeof setTimeout>>();
 const searchTerm = ref('');
-const activeTab = ref<'tab-info' | 'tab-logs' | 'tab-shell'>('tab-info');
+const activeTab = ref<'tab-info' | 'tab-stats' | 'tab-logs' | 'tab-shell'>('tab-info');
 const shellEverActivated = ref(false);
 
 // Vuex integration
@@ -180,7 +195,8 @@ const isRunning = computed(() => {
 // Watchers
 watch(containerName, (name) => {
   store.dispatch('page/setHeader', {
-    title:       name || 'Container Info',
+    title:       name || '',
+    titleKey:    name ? '' : 'containerInfo.fallbackTitle',
     description: '',
     action:      'ContainerStatusBadge',
   });
@@ -280,7 +296,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  store.dispatch('page/setHeader', { action: null });
+  store.dispatch('page/setAction', { action: '' });
   ipcRenderer.removeListener('settings-update', handleSettingsUpdate);
   ipcRenderer.removeListener('settings-read', handleSettingsRead);
   store.dispatch('container-engine/unsubscribe').catch(console.error);
@@ -375,8 +391,23 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+// Stretch the Tabbed wrappers to fill the page; without this the terminal's
+// flex height resolves against content and collapses to a single row.
+:deep(.action-tabs) {
+  flex: 1;
+  min-height: 0;
+}
+
+:deep(.tab-container) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 :deep(.container-logs-component),
-:deep(.container-shell-component) {
+:deep(.container-shell-component),
+:deep(.container-stats-component) {
   flex: 1;
   display: flex;
   flex-direction: column;

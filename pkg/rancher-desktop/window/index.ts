@@ -7,6 +7,7 @@ import Electron, {
 
 import * as K8s from '@pkg/backend/k8s';
 import { getSettings } from '@pkg/config/settingsImpl';
+import { getLocale } from '@pkg/main/i18n';
 import { IpcRendererEvents } from '@pkg/typings/electron-ipc';
 import { isDevBuild } from '@pkg/utils/environment';
 import Logging from '@pkg/utils/logging';
@@ -96,7 +97,12 @@ export function createWindow(name: string, url: string, options: Electron.Browse
     console.log(`Failed to load ${ url }: ${ errorCode } (${ errorDescription })`, event);
   });
   console.debug('createWindow() name:', name, ' url:', url);
-  window.loadURL(url);
+  // Give the renderer its locale in the URL so the first paint is already
+  // localized, without waiting on a settings roundtrip.
+  const localizedUrl = new URL(url);
+
+  localizedUrl.searchParams.set('locale', getLocale());
+  window.loadURL(localizedUrl.toString());
   windowMapping[name] = window.id;
 
   return window;
@@ -734,4 +740,18 @@ export function centerDialog(window: BrowserWindow, dialog: BrowserWindow, offse
   const y = Math.floor(windowBounds.y + offsetY);
 
   dialog.setPosition(x, y);
+}
+
+/**
+ * Returns a typed helper that sends a renderer IPC event to a specific
+ * WebContents, swallowing errors if the frame has been destroyed.
+ */
+export function makeSendToFrame(sender: Electron.WebContents, logger?: { debug: (...args: any[]) => void }) {
+  return <ch extends keyof IpcRendererEvents>(channel: ch, ...args: Parameters<IpcRendererEvents[ch]>) => {
+    try {
+      sender.send(channel, ...args);
+    } catch (ex) {
+      logger?.debug(`Failed to send ${ channel } to frame:`, ex);
+    }
+  };
 }

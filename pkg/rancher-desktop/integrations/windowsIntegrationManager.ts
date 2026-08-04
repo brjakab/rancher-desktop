@@ -220,6 +220,7 @@ export default class WindowsIntegrationManager implements IntegrationManager {
       mainEvents.emit('integration-update', await this.listIntegrations());
       // TypeScript is being too smart and thinking we can only be ACTIVE here;
       // but that may be set from concurrent calls to sync().
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- the cast defeats that narrowing
       const currentState: SyncState = this.syncState as any;
 
       switch (currentState.state) {
@@ -321,7 +322,7 @@ export default class WindowsIntegrationManager implements IntegrationManager {
       await this.wslExe,
       args,
       {
-        env:         opts.env,
+        env:         { ...process.env, ...opts.env },
         encoding:    opts.encoding ?? 'utf-8',
         stdio:       ['ignore', logStream, logStream],
         windowsHide: true,
@@ -348,7 +349,7 @@ export default class WindowsIntegrationManager implements IntegrationManager {
       await this.wslExe,
       args,
       {
-        env:         opts.env,
+        env:         { ...process.env, ...opts.env },
         encoding:    opts.encoding ?? 'utf-8',
         stdio:       ['ignore', 'pipe', logStream],
         windowsHide: true,
@@ -568,7 +569,6 @@ export default class WindowsIntegrationManager implements IntegrationManager {
         {
           distro,
           env: {
-            ...process.env,
             KUBECONFIG: kubeconfigPath,
             WSLENV:     `${ process.env.WSLENV }:KUBECONFIG/up`,
           },
@@ -609,7 +609,7 @@ export default class WindowsIntegrationManager implements IntegrationManager {
         await this.execCommand({
           distro,
           env: {
-            ...process.env, ...env, WSLENV: wslenv,
+            ...env, WSLENV: wslenv,
           },
         }, await this.getLinuxToolPath(distro, executable('setup-spin')));
       }

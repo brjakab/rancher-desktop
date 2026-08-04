@@ -1,16 +1,21 @@
+import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
 import { test, expect, _electron } from '@playwright/test';
 
 import { MainWindowScreenshots, PreferencesScreenshots } from './Screenshots';
+import { containerInspectData } from './test-data/container-inspect';
+import { generateStatsSamples, processTableOutput } from './test-data/container-stats';
 import { containersList } from './test-data/containers';
 import { imagesList } from './test-data/images';
 import { lockedSettings } from './test-data/preferences';
 import { snapshotsList } from './test-data/snapshots';
 import { volumesList } from './test-data/volumes';
 
+import { ContainerInfoPage } from '@/e2e/pages/container-info-page';
 import { ContainerLogsPage } from '@/e2e/pages/container-logs-page';
+import { ContainerStatsPage } from '@/e2e/pages/container-stats-page';
 import { NavPage } from '@/e2e/pages/nav-page';
 import { PreferencesPage } from '@/e2e/pages/preferences';
 import { clearUserProfile } from '@/e2e/utils/ProfileUtils';
@@ -26,6 +31,12 @@ const isWin = os.platform() === 'win32';
 const isMac = os.platform() === 'darwin';
 let console: Log;
 
+// A fresh install defaults to the oldest supported Kubernetes version so that a
+// later upgrade never forces a downgrade; show the current stable one instead.
+const stableKubernetesVersion: string = JSON.parse(
+  fs.readFileSync(path.resolve(import.meta.dirname, '..', 'resources', 'k3s-versions.json'), 'utf8'),
+).channels.stable;
+
 test.describe.serial('Main App Test', () => {
   let electronApp: ElectronApplication;
   let page: Page;
@@ -33,13 +44,23 @@ test.describe.serial('Main App Test', () => {
   let screenshot: MainWindowScreenshots;
   const afterCheckedTimeout = 200;
 
+  const groups = containersList.reduce((set, container) => {
+    const labels: Record<string, string> = container.Labels || {};
+    const group = labels['com.docker.compose.project'] || labels['io.kubernetes.pod.namespace'] + '/' + labels['io.kubernetes.pod.name'];
+    set.add(group);
+
+    return set;
+  }, new Set<string>());
+  const expectedContainerCount = containersList.length + groups.size + 1; // +1 for the header row
+
   test.beforeAll(async({ colorScheme }, testInfo) => {
     createDefaultSettings({
       application:     { updater: { enabled: false } },
       containerEngine: {
         allowedImages: { enabled: false, patterns: ['rancher/example'] },
-        name:          ContainerEngine.CONTAINERD,
+        name:          ContainerEngine.MOBY,
       },
+      kubernetes:  { version: stableKubernetesVersion },
       diagnostics: { showMuted: true, mutedChecks: { MOCK_CHECKER: true } },
     });
 
@@ -91,8 +112,7 @@ test.describe.serial('Main App Test', () => {
     test('General Page', async({ colorScheme }) => {
       await screenshot.take('General', navPage);
     });
-
-    test('Containers Page', async() => {
+    test.beforeAll(async() => {
       // Override the containers before the Vuex state is loaded.
       await navPage.page.exposeFunction('listContainersMock', (options?: any) => {
         return Promise.resolve(containersList);
@@ -102,17 +122,81 @@ test.describe.serial('Main App Test', () => {
         ddClient.docker._listContainers = ddClient.docker.listContainers;
         ddClient.docker.listContainers = listContainersMock;
       });
+    });
+    test.afterAll(async() => navPage.page.evaluate(() => {
+      const { ddClient } = window as any;
+      ddClient.docker.listContainers = ddClient.docker._listContainers;
+      delete ddClient.docker._listContainers;
+    }));
+
+    test('Containers Page', async() => {
+      const containersPage = await navPage.navigateTo('Containers');
+
+      await expect(containersPage.page.getByRole('row')).toHaveCount(expectedContainerCount);
+      await screenshot.take('Containers');
+    });
+
+    test('Container Inspect Page', async({ colorScheme }) => {
+      const containersPage = await navPage.navigateTo('Containers');
+
+      await containersPage.waitForTableToLoad();
+      await expect(containersPage.page.getByRole('row')).toHaveCount(expectedContainerCount);
+
+      // Mock the docker inspect call to return our test data
+      await containersPage.page.evaluate((inspectData) => {
+        const { ddClient } = window as any;
+        ddClient.docker.cli._exec = ddClient.docker.cli.exec;
+        ddClient.docker.cli.exec = (command, args, options) => {
+          if (command === 'inspect') {
+            return {
+              parseJsonObject: () => [inspectData],
+            };
+          }
+          return ddClient.docker.cli._exec(command, args, options);
+        };
+      }, containerInspectData);
 
       try {
-        const containersPage = await navPage.navigateTo('Containers');
+        const containerId = containersList[0].Id;
 
-        await expect(containersPage.page.getByRole('row')).toHaveCount(11);
-        await screenshot.take('Containers');
+        await containersPage.waitForContainerToAppear(containerId);
+        await containersPage.viewContainerInfo(containerId);
+
+        await containersPage.page.waitForURL('**/containers/info/**');
+
+        const containerInfoPage = new ContainerInfoPage(containersPage.page);
+        const containerInspectPage = await containerInfoPage.navigateToTab('info');
+
+        // Wait for the inspect data to load (with longer timeout for CI)
+        await containerInspectPage.waitForData(30_000);
+
+        // Wait for specific summary content to ensure the component has fully rendered
+        await expect(containersPage.page.getByTestId('info-row-name').locator('td')).toContainText('webapp-postgres-1');
+        await expect(containersPage.page.getByTestId('info-row-image').locator('td')).toContainText('postgres:15');
+
+        // Wait for sections to be present and stable
+        await expect(containerInspectPage.mountsSection).toBeVisible();
+        await expect(containerInspectPage.envSection).toBeVisible();
+        await expect(containerInspectPage.portsSection).toBeVisible();
+
+        // Open some sections to show their content
+        await containerInspectPage.mountsSection.click();
+        await containerInspectPage.envSection.click();
+        await containerInspectPage.portsSection.click();
+
+        // Wait for section content to be visible
+        await expect(containerInspectPage.mountsSection.getByText('/var/lib/postgresql/data')).toBeVisible();
+        await expect(containerInspectPage.envSection.getByText('POSTGRES_USER')).toBeVisible();
+        await expect(containerInspectPage.portsSection.getByText('5432/tcp')).toBeVisible();
+
+        await screenshot.take('Container-Inspect');
       } finally {
-        await navPage.page.evaluate(() => {
+        await containersPage.page.evaluate(() => {
           const { ddClient } = window as any;
-          ddClient.docker.listContainers = ddClient.docker._listContainers;
-          delete ddClient.docker._listContainers;
+          if (ddClient.docker.cli._exec) {
+            ddClient.docker.cli.exec = ddClient.docker.cli._exec;
+            delete ddClient.docker.cli._exec;
+          }
         });
       }
     });
@@ -121,7 +205,7 @@ test.describe.serial('Main App Test', () => {
       const containersPage = await navPage.navigateTo('Containers');
 
       await containersPage.waitForTableToLoad();
-      await expect(containersPage.page.getByRole('row')).toHaveCount(11);
+      await expect(containersPage.page.getByRole('row')).toHaveCount(expectedContainerCount);
 
       await containersPage.page.evaluate(() => {
         const { ddClient } = window as any;
@@ -160,8 +244,9 @@ test.describe.serial('Main App Test', () => {
         await containersPage.viewContainerInfo(containerId);
 
         await containersPage.page.waitForURL('**/containers/info/**');
+        const containerInfoPage = new ContainerInfoPage(containersPage.page);
+        const containerLogsPage = await containerInfoPage.navigateToTab('logs');
 
-        const containerLogsPage = new ContainerLogsPage(containersPage.page);
         await containerLogsPage.waitForLogsToLoad();
         await expect(containerLogsPage.containerInfo).toBeVisible();
         await expect(containerLogsPage.terminal).toBeVisible();
@@ -174,6 +259,85 @@ test.describe.serial('Main App Test', () => {
           if (ddClient.docker.cli._exec) {
             ddClient.docker.cli.exec = ddClient.docker.cli._exec;
             delete ddClient.docker.cli._exec;
+          }
+        });
+      }
+    });
+
+    test('Container Stats Page', async({ colorScheme }) => {
+      const containersPage = await navPage.navigateTo('Containers');
+
+      await containersPage.waitForTableToLoad();
+      await expect(containersPage.page.getByRole('row')).toHaveCount(expectedContainerCount);
+
+      const containerId = containersList[0].Id;
+
+      await containersPage.waitForContainerToAppear(containerId);
+      await containersPage.viewContainerInfo(containerId);
+
+      await containersPage.page.waitForURL('**/containers/info/**');
+
+      const containerInfoPage = new ContainerInfoPage(containersPage.page);
+
+      // Set up mocks for container stats IPC events BEFORE navigating to the tab
+      await containersPage.page.evaluate(
+        ({ statsSamples, topOutput }) => {
+          const { ipcRenderer } = require('electron');
+
+          // Store original send if it exists
+          ipcRenderer._originalSend = ipcRenderer.send;
+
+          // Mock ipcRenderer.send to intercept container-stats/start
+          ipcRenderer.send = (channel: string, ...args: any[]) => {
+            if (channel === 'container-stats/start') {
+              const [containerId, _intervalSeconds, _namespace] = args;
+
+              // Send multiple stats samples to populate the charts
+              statsSamples.forEach((sample: any, index: number) => {
+                setTimeout(() => {
+                  const statsJson = JSON.stringify(sample);
+
+                  ipcRenderer.emit('container-stats/data', null, containerId, statsJson);
+                }, index * 100);
+              });
+
+              // Send process table data after the first few samples
+              setTimeout(() => {
+                ipcRenderer.emit('container-stats/processes', null, containerId, topOutput);
+              }, 300);
+
+              return;
+            }
+            // Pass through other IPC calls
+            if (ipcRenderer._originalSend) {
+              ipcRenderer._originalSend(channel, ...args);
+            }
+          };
+        },
+        {
+          statsSamples: generateStatsSamples(10),
+          topOutput:    processTableOutput,
+        },
+      );
+
+      try {
+        const containerStatsPage = await containerInfoPage.navigateToTab('stats');
+        await containerStatsPage.waitForCharts(30_000);
+
+        // Wait for the charts to render with data
+        await expect(containerStatsPage.cpuChart).toBeVisible();
+        await expect(containerStatsPage.memoryChart).toBeVisible();
+        await expect(containerStatsPage.networkChart).toBeVisible();
+        await expect(containerStatsPage.ioChart).toBeVisible();
+        await expect(containerStatsPage.processTable).toBeVisible();
+
+        await screenshot.take('Container-Stats');
+      } finally {
+        await containersPage.page.evaluate(() => {
+          const { ipcRenderer } = require('electron');
+          if (ipcRenderer._originalSend) {
+            ipcRenderer.send = ipcRenderer._originalSend;
+            delete ipcRenderer._originalSend;
           }
         });
       }
@@ -359,26 +523,29 @@ test.describe.serial('Main App Test', () => {
         await expect(e2ePreferences.virtualMachine.mountType).toBeVisible();
         await prefScreenshot.take('virtualMachine', 'tabVolumes');
 
-        await e2ePreferences.virtualMachine.ninep.click();
-        await expect(e2ePreferences.virtualMachine.ninep).toBeChecked();
-        await page.waitForTimeout(afterCheckedTimeout);
-        await prefScreenshot.take('virtualMachine', 'tabVolumes_9P');
+        // 9p requires QEMU, which is the default on Linux.  macOS defaults to
+        // VZ, so its 9p screenshot is captured after switching to QEMU below.
+        if (!isMac) {
+          await e2ePreferences.virtualMachine.ninep.click();
+          await expect(e2ePreferences.virtualMachine.ninep).toBeChecked();
+          await page.waitForTimeout(afterCheckedTimeout);
+          await prefScreenshot.take('virtualMachine', 'tabVolumes_9P');
+        }
       });
 
       test.describe('Mac only tests', () => {
         test.skip(!isMac, 'Mac only test');
 
-        test('EmulationTab', async() => {
+        test('EmulationTab-vz', async() => {
           await e2ePreferences.virtualMachine.tabEmulation.click();
           await expect(e2ePreferences.virtualMachine.vmType).toBeVisible();
-          await prefScreenshot.take('virtualMachine', 'tabEmulation');
 
-          // If applicable, switch to VZ so we can use virtiofs.
+          // Ensure VZ (the default) is selected so virtiofs is available next.
           if (await e2ePreferences.virtualMachine.vz.isEnabled()) {
-            await page.waitForTimeout(afterCheckedTimeout);
-            await expect(e2ePreferences.virtualMachine.vz).toBeVisible();
             await e2ePreferences.virtualMachine.vz.click({ position: { x: 10, y: 10 } });
             await expect(e2ePreferences.virtualMachine.vz).toBeChecked();
+            await page.waitForTimeout(afterCheckedTimeout);
+            await prefScreenshot.take('virtualMachine', 'tabEmulation_vz');
           }
         });
 
@@ -392,11 +559,25 @@ test.describe.serial('Main App Test', () => {
           }
         });
 
-        test('EmulationTab-vz', async() => {
+        test('VolumesTab-9p', async() => {
+          // 9p is only valid with QEMU, so switch the VM type before selecting it.
           await e2ePreferences.virtualMachine.tabEmulation.click();
-          if (await e2ePreferences.virtualMachine.vz.isEnabled()) {
-            await prefScreenshot.take('virtualMachine', 'tabEmulation_vz');
-          }
+          await e2ePreferences.virtualMachine.qemu.click({ position: { x: 10, y: 10 } });
+          await expect(e2ePreferences.virtualMachine.qemu).toBeChecked();
+
+          await e2ePreferences.virtualMachine.tabVolumes.click();
+          await e2ePreferences.virtualMachine.ninep.click();
+          await expect(e2ePreferences.virtualMachine.ninep).toBeChecked();
+          await page.waitForTimeout(afterCheckedTimeout);
+          await prefScreenshot.take('virtualMachine', 'tabVolumes_9P');
+        });
+
+        test('EmulationTab', async() => {
+          // QEMU is still selected from the previous test; the docs embed this
+          // as the QEMU emulation screenshot.
+          await e2ePreferences.virtualMachine.tabEmulation.click();
+          await expect(e2ePreferences.virtualMachine.qemu).toBeChecked();
+          await prefScreenshot.take('virtualMachine', 'tabEmulation');
         });
       });
     });
@@ -468,37 +649,5 @@ test.describe.serial('Main App Test', () => {
       await preferencesPage.waitForTimeout(250);
       await prefScreenshot.take('kubernetes', 'lockedFields');
     });
-  });
-
-  test('Intro Image', async({ colorScheme }) => {
-    await navPage.navigateTo('General');
-    const bounds = await navPage.page.evaluate(() => {
-      window.resizeTo(1024, 768);
-
-      return {
-        top: window.screenTop, left: window.screenLeft, width: window.outerWidth, height: window.outerHeight,
-      };
-    });
-
-    await navPage.preferencesButton.click();
-    await electronApp.waitForEvent('window', page => /preferences/i.test(page.url()));
-    const preferencesPage = electronApp.windows()[1];
-
-    await preferencesPage.evaluate((bounds) => {
-      const {
-        top, left, width, height,
-      } = bounds;
-
-      window.moveTo(left + (width - window.outerWidth) / 2, top + (height - window.outerHeight) / 2);
-    }, bounds);
-
-    try {
-      await preferencesPage.emulateMedia({ colorScheme });
-      await preferencesPage.waitForTimeout(250);
-      await preferencesPage.bringToFront();
-      await screenshot.take('intro', true);
-    } finally {
-      preferencesPage.close({ runBeforeUnload: true });
-    }
   });
 });

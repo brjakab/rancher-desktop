@@ -46,7 +46,7 @@ export default defineComponent({
         'transientSettings/commitPreferences',
         {
           ...this.credentials as ServerState,
-          payload: { preferences: { navItem: { currentTabs: { 'Container Engine': tabName } } } } as RecursivePartial<TransientSettings>,
+          payload: { preferences: { navItem: { currentTabs: { 'Container Engine': tabName } } } },
         },
       );
     },
@@ -64,12 +64,12 @@ export default defineComponent({
   >
     <template #tabs>
       <tab
-        label="General"
+        label-key="preferences.tabs.general"
         name="general"
         :weight="2"
       />
       <tab
-        label="Allowed Images"
+        label-key="preferences.tabs.allowedImages"
         name="allowed-images"
         :weight="1"
       />
